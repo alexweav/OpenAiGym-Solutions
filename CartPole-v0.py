@@ -1,6 +1,11 @@
 import gym
 import numpy as np
 import time
+from numerical_gradient import *
+
+#Displays numerical evidence that backprop gradients are correct
+#Slows down performance dramatically and doesnt affect outcome, so disabled by default
+check_gradient = False
 
 #Some useful numerical values
 num_hidden_neurons = 10
@@ -84,16 +89,23 @@ def decide_action(probability):
 #Backpropagation of a single frame
 def backprop(hidden_activations, d_log_prob, model, observation):
     d_b2 = d_log_prob.reshape(1)
-    print(d_b2.shape, model['b2'].shape)
     d_W2 = np.dot(hidden_activations.T, d_log_prob)
-    print(d_W2.shape, model['W2'].shape)
     d_hidden_activations = (model['W2'] * d_log_prob[0]).reshape(1, num_hidden_neurons)
-    print(d_hidden_activations.shape, hidden_activations.shape)
-    d_hidden_activations[hidden_activations <= 0] = 0
+    d_hidden_activations[hidden_activations <= 0] = 0 #ReLU backprop, trivial, no need to check
     d_b1 = d_hidden_activations
-    print(d_b1.shape, model['b1'].shape)
     d_W1 = np.dot(observation.T, d_hidden_activations)
-    print(d_W1.shape, model['W1'].shape)
+    
+    if check_gradient: 
+        d_b2_num = numerical_gradient_layer(lambda b : np.dot(hidden_activations, model['W2']) + b, model['b2'], d_log_prob)
+        d_W2_num = numerical_gradient_layer(lambda w : np.dot(hidden_activations, w) + model['b2'], model['W2'], d_log_prob)
+        d_hidden_activations_num = numerical_gradient_layer(lambda x : np.dot(x, model['W2']) + model['b2'], hidden_activations, d_log_prob)
+        print('d_b2 error:', np.max(relative_error(d_b2, d_b2_num)))
+        print('d_W2 error:', np.max(relative_error(d_W2, d_W2_num)))
+        d_b1_num = numerical_gradient_layer(lambda b : np.dot(observation, model['W1']) + b, model['b1'], d_hidden_activations)
+        d_W1_num = numerical_gradient_layer(lambda w : np.dot(observation, w) + model['b1'], model['W1'], d_hidden_activations) 
+        print('d_b1 error:', np.max(relative_error(d_b1, d_b1_num)))
+        print('d_W1 error:', np.max(relative_error(d_W1, d_W1_num)))
+    
     return {'W1':d_W1, 'b1':d_b1, 'W2':d_W2, 'b2':d_b2}
     
 
