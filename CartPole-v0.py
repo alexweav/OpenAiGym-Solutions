@@ -19,6 +19,7 @@ def main():
     input_dim = env.observation_space.low.shape[0]
 
     model = init_model(input_dim, num_hidden_neurons)
+    rmsprop_cache = init_rmsprop_cache(model)
 
     for game in range(num_games):
         observation = env.reset()
@@ -58,6 +59,7 @@ def main():
         #Model derivatives for frame 0 of the episode
         #How to get deritaves for all frames without loop?
         model_derivatives = backprop(hidden_activations, d_log_probs, model, observations)
+        #model = update(model, model_derivatives, rmsprop_cache)
 
 
 #Initiates model and returns it in the form of a dict
@@ -68,6 +70,12 @@ def init_model(input_dim, num_hidden_neurons):
     model['W2'] = np.random.randn(num_hidden_neurons) / np.sqrt(num_hidden_neurons)
     model['b2'] = np.zeros(1)
     return model
+
+def init_rmsprop_cache(model):
+    rmsprop_cache = {}
+    for key, params in model.items():
+        rmsprop_cache[key] = np.zeros_like(params)
+
 
 #Standard sigmoid function
 def sigmoid(x):
@@ -119,6 +127,11 @@ def backprop(hidden_activations, d_log_prob, model, episode_observations):
         print('d_W1 error:', np.max(relative_error(d_W1, d_W1_num)))
     
     return {'W1':d_W1, 'b1':d_b1, 'W2':d_W2, 'b2':d_b2}
-    
+
+#RMSProp update of a single matrix
+def rmsprop(theta, dtheta, error, learning_rate, decay):
+    eps = 1e-8
+    error = decay * error + (1 - decay) * dtheta**2
+    return theta - learning_rate * dtheta / (np.sqrt(error) + eps)
 
 main()
