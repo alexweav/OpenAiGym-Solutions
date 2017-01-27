@@ -6,13 +6,15 @@ from numerical_gradient import *
 #Displays numerical evidence that backprop gradients are correct
 #Slows down performance dramatically and doesnt affect outcome, so disabled by default
 check_gradient = False
+verbose = True
+print_every = 100
 
 #Some useful numerical values
 num_hidden_neurons = 10
-learning_rate = 1e-4
+learning_rate = 1e-3
 gamma = 0.99
-num_games = 1
-win_reward_threshold = 195.0
+num_games = 100000
+win_reward_threshold = 30.0
 
 def main():
     env = gym.make('CartPole-v0')
@@ -22,6 +24,7 @@ def main():
     rmsprop_cache = init_rmsprop_cache(model)
 
     for game in range(num_games):
+        print(model['W1'][(0, 0)])
         observation = env.reset()
         observation = observation.reshape(1, input_dim)
         done = False
@@ -31,8 +34,7 @@ def main():
         d_log_probs = [] #Store the derivative of the loss function at every stage
         num_game_steps = 0
         total_reward = 0.0
-        #while not done:
-        for i in range(5):
+        while not done:
             #Single step of the game
             env.render()
             probability, hidden_activation = eval_model(model, observation)
@@ -47,19 +49,29 @@ def main():
             hidden_activations += [hidden_activation]
             d_log_probs += [d_log_probability]
             num_game_steps += 1
-        print("Game ", game, " final reward: ", total_reward)
+        if verbose:
+            print("Game ", game, " final reward: ", total_reward)
+
+        #print averages here?
+        if game % print_every == 0:
+            pass
 
         #1 if we won, -1 otherwise
-        win_modifier = 1 if total_reward >= win_reward_threshold else -1
+        #If we won, we want to reinforce the behavior so we optimize "uphill" on the reward function
+        #Otherwise, we want to optimize downhill
+        #RMSProp by default descends, so we want to reverse the direction
+        win_modifier = -1 if total_reward >= win_reward_threshold else 1
 
         observations = np.vstack(observations)
         d_log_probs = np.vstack(d_log_probs)
         hidden_activations = np.vstack(hidden_activations)
 
+        d_log_probs *= -win_modifier
+
         #Model derivatives for frame 0 of the episode
         #How to get deritaves for all frames without loop?
         model_derivatives = backprop(hidden_activations, d_log_probs, model, observations)
-        #model = update(model, model_derivatives, rmsprop_cache)
+        model = update(model, model_derivatives, rmsprop_cache)
 
 
 #Initiates model and returns it in the form of a dict
@@ -75,6 +87,7 @@ def init_rmsprop_cache(model):
     rmsprop_cache = {}
     for key, params in model.items():
         rmsprop_cache[key] = np.zeros_like(params)
+    return rmsprop_cache
 
 
 #Standard sigmoid function
@@ -132,6 +145,12 @@ def backprop(hidden_activations, d_log_prob, model, episode_observations):
 def rmsprop(theta, dtheta, error, learning_rate, decay):
     eps = 1e-8
     error = decay * error + (1 - decay) * dtheta**2
-    return theta - learning_rate * dtheta / (np.sqrt(error) + eps)
+    return theta - learning_rate * dtheta / (np.sqrt(error) + eps), error
+
+def update(model, model_derivatives, rmsprop_cache):
+    for key, layer in model.items():
+        model[key], rmsprop_cache[key] = rmsprop(layer, model_derivatives[key], rmsprop_cache[key], learning_rate, gamma)
+    return model
+
 
 main()
