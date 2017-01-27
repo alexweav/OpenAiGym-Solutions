@@ -30,7 +30,8 @@ def main():
         d_log_probs = [] #Store the derivative of the loss function at every stage
         num_game_steps = 0
         total_reward = 0.0
-        while not done:
+        #while not done:
+        for i in range(5):
             #Single step of the game
             env.render()
             probability, hidden_activation = eval_model(model, observation)
@@ -38,8 +39,7 @@ def main():
             observation, reward, done, _ = env.step(action)
             total_reward += reward
             observation = observation.reshape(1, input_dim)
-            y = action
-            d_log_probability = np.array(y - probability)
+            d_log_probability = action - probability
 
             #Store all the values for this game step and proceed
             observations += [observation]
@@ -47,10 +47,17 @@ def main():
             d_log_probs += [d_log_probability]
             num_game_steps += 1
         print("Game ", game, " final reward: ", total_reward)
+
+        #1 if we won, -1 otherwise
         win_modifier = 1 if total_reward >= win_reward_threshold else -1
+
+        observations = np.vstack(observations)
+        d_log_probs = np.vstack(d_log_probs)
+        hidden_activations = np.vstack(hidden_activations)
+
         #Model derivatives for frame 0 of the episode
         #How to get deritaves for all frames without loop?
-        model_derivatives = backprop(hidden_activations[0], d_log_probs[0], model, observations[0])
+        model_derivatives = backprop(hidden_activations, d_log_probs, model, observations)
 
 
 #Initiates model and returns it in the form of a dict
@@ -87,22 +94,27 @@ def decide_action(probability):
         return 0
 
 #Backpropagation of a single frame
-def backprop(hidden_activations, d_log_prob, model, observation):
-    d_b2 = d_log_prob.reshape(1)
-    d_W2 = np.dot(hidden_activations.T, d_log_prob)
-    d_hidden_activations = (model['W2'] * d_log_prob[0]).reshape(1, num_hidden_neurons)
+def backprop(hidden_activations, d_log_prob, model, episode_observations):
+    N = episode_observations.shape[0]
+    d_b2 = np.sum(d_log_prob, axis=0)
+    d_W2 = np.dot(hidden_activations.T, d_log_prob).ravel()
+    d_hidden_activations = (model['W2'] * d_log_prob).reshape(N, num_hidden_neurons)
     d_hidden_activations[hidden_activations <= 0] = 0 #ReLU backprop, trivial, no need to check
-    d_b1 = d_hidden_activations
-    d_W1 = np.dot(observation.T, d_hidden_activations)
+    d_b1 = np.sum(d_hidden_activations, axis=0)
+    d_W1 = np.dot(episode_observations.T, d_hidden_activations)
     
     if check_gradient: 
         d_b2_num = numerical_gradient_layer(lambda b : np.dot(hidden_activations, model['W2']) + b, model['b2'], d_log_prob)
         d_W2_num = numerical_gradient_layer(lambda w : np.dot(hidden_activations, w) + model['b2'], model['W2'], d_log_prob)
-        d_hidden_activations_num = numerical_gradient_layer(lambda x : np.dot(x, model['W2']) + model['b2'], hidden_activations, d_log_prob)
+        #d_hidden_activations_num = numerical_gradient_layer(lambda x : np.dot(x, model['W2']) + model['b2'], hidden_activations, d_log_prob)
         print('d_b2 error:', np.max(relative_error(d_b2, d_b2_num)))
+        #print(d_b2)
+        #print(d_b2_num)
         print('d_W2 error:', np.max(relative_error(d_W2, d_W2_num)))
-        d_b1_num = numerical_gradient_layer(lambda b : np.dot(observation, model['W1']) + b, model['b1'], d_hidden_activations)
-        d_W1_num = numerical_gradient_layer(lambda w : np.dot(observation, w) + model['b1'], model['W1'], d_hidden_activations) 
+        #print(d_W2)
+        #print(d_W2_num)
+        d_b1_num = numerical_gradient_layer(lambda b : np.dot(episode_observations, model['W1']) + b, model['b1'], d_hidden_activations)
+        d_W1_num = numerical_gradient_layer(lambda w : np.dot(episode_observations, w) + model['b1'], model['W1'], d_hidden_activations) 
         print('d_b1 error:', np.max(relative_error(d_b1, d_b1_num)))
         print('d_W1 error:', np.max(relative_error(d_W1, d_W1_num)))
     
