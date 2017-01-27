@@ -6,15 +6,15 @@ from numerical_gradient import *
 #Displays numerical evidence that backprop gradients are correct
 #Slows down performance dramatically and doesnt affect outcome, so disabled by default
 check_gradient = False
-verbose = True
+verbose = False
 print_every = 100
 
 #Some useful numerical values
 num_hidden_neurons = 10
-learning_rate = 1e-3
+learning_rate = 7e-4
 gamma = 0.99
 num_games = 100000
-win_reward_threshold = 30.0
+win_reward_threshold = 100.0
 
 def main():
     env = gym.make('CartPole-v0')
@@ -22,9 +22,9 @@ def main():
 
     model = init_model(input_dim, num_hidden_neurons)
     rmsprop_cache = init_rmsprop_cache(model)
+    num_wins = 0
 
     for game in range(num_games):
-        print(model['W1'][(0, 0)])
         observation = env.reset()
         observation = observation.reshape(1, input_dim)
         done = False
@@ -52,15 +52,18 @@ def main():
         if verbose:
             print("Game ", game, " final reward: ", total_reward)
 
-        #print averages here?
-        if game % print_every == 0:
-            pass
-
         #1 if we won, -1 otherwise
         #If we won, we want to reinforce the behavior so we optimize "uphill" on the reward function
         #Otherwise, we want to optimize downhill
         #RMSProp by default descends, so we want to reverse the direction
-        win_modifier = -1 if total_reward >= win_reward_threshold else 1
+        win_modifier = 1 if total_reward >= win_reward_threshold else -1
+        if win_modifier == 1:
+            num_wins += 1
+
+        #print averages here?
+        if game % print_every == 0:
+            print("Last set number of wins: ", num_wins)
+            num_wins = 0
 
         observations = np.vstack(observations)
         d_log_probs = np.vstack(d_log_probs)
