@@ -7,14 +7,15 @@ from numerical_gradient import *
 #Slows down performance dramatically and doesnt affect outcome, so disabled by default
 check_gradient = False
 verbose = False
+render = False
 print_every = 100
 
 #Some useful numerical values
 num_hidden_neurons = 10
-learning_rate = 7e-4
+learning_rate = 3e-4
 gamma = 0.99
 num_games = 100000
-win_reward_threshold = 100.0
+win_reward_threshold = 195.0
 
 def main():
     env = gym.make('CartPole-v0')
@@ -24,6 +25,8 @@ def main():
     rmsprop_cache = init_rmsprop_cache(model)
     num_wins = 0
 
+    final_rewards = np.empty((0, 0))
+
     for game in range(num_games):
         observation = env.reset()
         observation = observation.reshape(1, input_dim)
@@ -32,14 +35,17 @@ def main():
         observations = [] #List of all observations made throughout game
         hidden_activations = [] #Store hidden layer activations at every stage for backprop
         d_log_probs = [] #Store the derivative of the loss function at every stage
+        rewards = []
         num_game_steps = 0
         total_reward = 0.0
         while not done:
             #Single step of the game
-            env.render()
+            if render:
+                env.render()
             probability, hidden_activation = eval_model(model, observation)
             action = decide_action(probability)
             observation, reward, done, _ = env.step(action)
+            rewards.append(reward)
             total_reward += reward
             observation = observation.reshape(1, input_dim)
             d_log_probability = action - probability
@@ -52,24 +58,30 @@ def main():
         if verbose:
             print("Game ", game, " final reward: ", total_reward)
 
-        #1 if we won, -1 otherwise
-        #If we won, we want to reinforce the behavior so we optimize "uphill" on the reward function
-        #Otherwise, we want to optimize downhill
-        #RMSProp by default descends, so we want to reverse the direction
-        win_modifier = 1 if total_reward >= win_reward_threshold else -1
-        if win_modifier == 1:
+        if game < 100:
+            final_rewards = np.append(final_rewards, total_reward)
+        else:
+            final_rewards = np.delete(final_rewards, 0)
+            final_rewards = np.append(final_rewards, total_reward)
+
+        if total_reward >= win_reward_threshold:
             num_wins += 1
 
-        #print averages here?
         if game % print_every == 0:
             print("Last set number of wins: ", num_wins)
+            print("Last set average reward: ", np.mean(final_rewards))
             num_wins = 0
 
         observations = np.vstack(observations)
         d_log_probs = np.vstack(d_log_probs)
         hidden_activations = np.vstack(hidden_activations)
+        rewards = np.vstack(rewards)
 
-        d_log_probs *= -win_modifier
+        accumulated_rewards = accumulate_reward(rewards)
+        accumulated_rewards -= np.mean(accumulated_rewards)
+        accumulated_rewards /= np.std(accumulated_rewards)
+
+        d_log_probs *= accumulated_rewards/accumulated_rewards.shape[0]
 
         #Model derivatives for frame 0 of the episode
         #How to get deritaves for all frames without loop?
@@ -154,6 +166,14 @@ def update(model, model_derivatives, rmsprop_cache):
     for key, layer in model.items():
         model[key], rmsprop_cache[key] = rmsprop(layer, model_derivatives[key], rmsprop_cache[key], learning_rate, gamma)
     return model
+
+def accumulate_reward(rewards):
+    accumulated_reward = np.zeros_like(rewards)
+    accumulator = 0
+    for i in range(rewards.shape[0]):
+        accumulator = gamma * accumulator + rewards[i]
+        accumulated_reward[i] = accumulator
+    return accumulated_reward
 
 
 main()
