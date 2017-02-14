@@ -15,7 +15,7 @@ num_hidden_neurons = 10
 learning_rate = 3e-4
 gamma = 0.99
 num_games = 100000
-win_reward_threshold = 195.0
+win_reward_threshold = 475.0
 
 def main():
     env = gym.make('CartPole-v0')
