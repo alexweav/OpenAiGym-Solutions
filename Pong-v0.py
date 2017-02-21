@@ -5,13 +5,15 @@ import time
 num_games = 1
 print_every = 10
 gamma = 0.99
+hidden1_neurons = 500
+hidden2_neurons = 100
 
 def main():
     env = gym.make('Pong-v0')
     input_dim = 80*80*3
     output_dim = 6 #Action space size
 
-    architecture = [input_dim, 500, 100, output_dim]
+    architecture = [input_dim, hidden1_neurons, hidden2_neurons, output_dim]
     model = init_model(architecture)
 
     for game in range(num_games):
@@ -57,6 +59,10 @@ def main():
         accumulated_rewards = accumulate_reward(rewards)
         accumulated_rewards -= np.mean(accumulated_rewards)
         accumulated_rewards /= np.std(accumulated_rewards)
+
+        d_log_probs *= accumulated_rewards/accumulated_rewards.shape[0] #? size difference?
+
+        model_derivatives = backprop(hidden1_activations, hidden2_activations, d_log_probs, model, observations)
         
         print("Num steps", num_game_steps)
         print("Observations shape", observations.shape)
@@ -88,6 +94,12 @@ def init_model(architecture):
     model['b3'] = np.zeros((1, architecture[3]))
     return model
 
+def init_rmsprop_cache(model):
+    rmsprop_cache = {}
+    for key, params in model.items():
+        rmsprop_cache[key] = np.zeros_like(params)
+    return rmsprop_cache
+
 def relu(x):
     x[x<0] = 0
     return x
@@ -114,5 +126,19 @@ def accumulate_reward(rewards):
         accumulator = gamma * accumulator * rewards[i]
         accumulated_reward[i] = accumulator
     return accumulated_reward
+
+def backprop(hidden1_activations, hidden2_activations, d_log_prob, model, episode_observations):
+    N = episode_observations.shape[0]
+    d_b3 = np.sum(d_log_prob, axis=0)
+    d_W3 = np.dot(hidden2_activations.T, d_log_prob).ravel()
+    d_hidden2_activations = (d_log_prob.dot(model['W3'].T)).reshape(N, hidden2_neurons)
+    d_hidden2_activations[hidden2_activations <= 0] = 0
+    d_b2 = np.sum(d_hidden2_activations, axis=0)
+    d_W2 = np.dot(hidden1_activations.T, d_hidden2_activations)
+    d_hidden1_activations = (d_hidden2_activations.dot(model['W2'].T)).reshape(N, hidden1_neurons)
+    d_hidden1_activations[hidden1_activations <= 0] = 0
+    d_b1 = np.sum(d_hidden1_activations, axis=0)
+    d_W1 = np.dot(episode_observations.T, d_hidden1_activations)
+    return {'W1':d_W1, 'b1':d_b1, 'W2':d_W2, 'b2':d_b2, 'W3':d_W3, 'b3':d_b3}
 
 main()
