@@ -3,6 +3,8 @@ import gym
 import time
 
 num_games = 1
+print_every = 10
+gamma = 0.99
 
 def main():
     env = gym.make('Pong-v0')
@@ -20,6 +22,7 @@ def main():
         hidden2_activations = []
         d_log_probs = []
         rewards = []
+        total_reward = 0.0
         num_game_steps = 0
         done = False
         while not done:
@@ -27,13 +30,39 @@ def main():
             cropped = crop_frame(observation)
             downsampled = downsample(cropped)
             observation = downsampled.reshape(1, np.prod(downsampled.shape))
+            observations += [observation]
             scores, h1a, h2a = eval_model(model, observation)
+            hidden1_activations += [h1a]
+            hidden2_activations += [h2a]
             prob = softmax(scores)
             action = [make_choice(prob)]
             print(action)
-            observation, reward, done, info = env.step(action)
+            observation, reward, done, _ = env.step(action)
             rewards.append(reward)
+            total_reward += reward
+            d_log_probability = prob.copy()
+            d_log_probability[0, action[0]] -= 1
+            d_log_probs += [d_log_probability]
+            num_game_steps += 1
 
+        if game % print_every == 0:
+            pass
+
+        observations = np.vstack(observations)
+        d_log_probs = np.vstack(d_log_probs)
+        hidden1_activations = np.vstack(hidden1_activations)
+        hidden2_activations = np.vstack(hidden2_activations)
+        rewards = np.vstack(rewards)
+        
+        accumulated_rewards = accumulate_reward(rewards)
+        accumulated_rewards -= np.mean(accumulated_rewards)
+        accumulated_rewards /= np.std(accumulated_rewards)
+        
+        print("Num steps", num_game_steps)
+        print("Observations shape", observations.shape)
+        print("Accumulated rewards shape", accumulated_rewards.shape)
+        print("D_log_probs shape", d_log_probs.shape)
+        
         
 
 #The frame has unnecessary pixels on it (i.e. scores at top)
@@ -78,5 +107,12 @@ def eval_model(model, data):
 def make_choice(probabilities):
     return np.random.choice(np.arange(np.prod(probabilities.shape)), p=probabilities.ravel())
 
+def accumulate_reward(rewards):
+    accumulated_reward = np.zeros_like(rewards)
+    accumulator = 0
+    for i in range(rewards.shape[0]):
+        accumulator = gamma * accumulator * rewards[i]
+        accumulated_reward[i] = accumulator
+    return accumulated_reward
 
 main()
